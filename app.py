@@ -13,7 +13,7 @@ st.title("112 Helpline — Analytics Prototype (Sprint 1)")
 # Sidebar: upload or use sample
 st.sidebar.header("Data Input")
 uploaded_file = st.sidebar.file_uploader("Upload CSV/XLSX (call logs)", type=["csv", "xlsx"])
-use_sample = st.sidebar.checkbox("Use sample dummy data (data/dummy_data.csv)", value=True)
+use_sample = st.sidebar.checkbox("Use sample dummy data", value=True)
 
 # Choose source
 df_raw = None
@@ -23,7 +23,7 @@ try:
         df_raw, metadata = load_data(uploaded_file)
         st.sidebar.success(f"Loaded uploaded file ({metadata['record_count']} rows)")
     elif use_sample:
-        sample_path = os.path.join("data", "dummy_data.csv")
+        sample_path = os.path.join("data", "112_calls_synthetic.csv")
         if not os.path.exists(sample_path):
             st.sidebar.error(f"Sample file not found at {sample_path}")
         else:
