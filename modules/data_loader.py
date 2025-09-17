@@ -27,7 +27,7 @@ def compute_file_hash(path_or_buffer):
         path_or_buffer.seek(0)
     return sha256.hexdigest()
 
-def load_data(filepath_or_buffer=None, default_path="data/dummy_data.csv"):
+def load_data(filepath_or_buffer=None, default_path="data/112_calls_synthetic.csv"):
     """
     Load CSV or Excel into a pandas DataFrame.
     If filepath_or_buffer is None, load default_path.
