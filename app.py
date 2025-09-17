@@ -5,6 +5,8 @@ import plotly.express as px
 from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
 import os
+from modules.mapping import plot_points_on_map, plot_heatmap
+from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Goa Police", layout="wide")
 
@@ -68,6 +70,21 @@ kpi3.metric("% with coordinates", f"{kpis['with_coords_pct']}%")
 
 st.markdown("---")
 left, right = st.columns([2, 1])
+
+# Mapping section
+st.markdown("## Spatial Mapping")
+
+tab1, tab2 = st.tabs(["Points Map", "Hotspot Heatmap"])
+
+with tab1:
+    m1 = plot_points_on_map(df_filtered)
+    st_data1 = st_folium(m1, width=700, height=500)
+
+with tab2:
+    m2 = plot_heatmap(df_filtered)
+    st_data2 = st_folium(m2, width=700, height=500)
+    st.sidebar.write("Valid coords in filtered data:", df_filtered[['caller_lat','caller_lon']].dropna().shape[0])
+
 
 # Time series (left)
 with left:
