@@ -6,9 +6,9 @@ from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
 import os
 
-st.set_page_config(page_title="112 Helpline Analytics - Sprint 1", layout="wide")
+st.set_page_config(page_title="Goa Police", layout="wide")
 
-st.title("112 Helpline — Analytics Prototype (Sprint 1)")
+st.title("112 Helpline — Analytics Dashboard")
 
 # Sidebar: upload or use sample
 st.sidebar.header("Data Input")
