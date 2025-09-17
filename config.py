@@ -16,3 +16,9 @@ JURISDICTION_COL = "jurisdiction"
 
 # festival months (used in synthetic generation and optional feature flags)
 FESTIVAL_MONTHS = [2, 3, 8, 9, 10, 11]
+# Known festivals and their weeks (example dates, update as per real Goa calendar)
+FESTIVALS = {
+    "Ganesh Chaturthi": ("2024-09-05", "2024-09-11"),
+    "Diwali": ("2024-11-01", "2024-11-07"),
+    "Carnival": ("2025-02-22", "2025-02-28")
+}

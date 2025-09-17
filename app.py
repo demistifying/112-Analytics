@@ -5,6 +5,12 @@ import plotly.express as px
 from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
 import os
+from config import FESTIVALS
+from modules.analysis import (
+    agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis,
+    interpret_time_series, interpret_hourly_distribution
+)
+
 
 st.set_page_config(page_title="Goa Police", layout="wide")
 
@@ -69,21 +75,92 @@ kpi3.metric("% with coordinates", f"{kpis['with_coords_pct']}%")
 st.markdown("---")
 left, right = st.columns([2, 1])
 
+# Sidebar festival filter
+st.sidebar.header("Festival Filter")
+festival_choice = st.sidebar.selectbox("Select festival week", ["None"] + list(FESTIVALS.keys()))
+
+fest_mask = pd.Series([True] * len(df))  # default = no filter
+
+if festival_choice != "None":
+    fest_start, fest_end = FESTIVALS[festival_choice]
+    fest_start, fest_end = pd.to_datetime(fest_start), pd.to_datetime(fest_end)
+
+    # Create boolean mask for festival week
+    fest_mask = (df["call_ts"] >= fest_start) & (df["call_ts"] <= fest_end)
+
+    st.sidebar.success(f"Filtering for {festival_choice} week ({fest_start.date()} → {fest_end.date()})")
+
+    # Override date_range with festival week
+    date_range = [fest_start, fest_end]
+
+# Apply combined mask (festival + date + filters)
+mask = (
+    (pd.to_datetime(df["date"]) >= pd.to_datetime(date_range[0])) &
+    (pd.to_datetime(df["date"]) <= pd.to_datetime(date_range[1])) &
+    (df["category"].isin(selected_categories)) &
+    (df["jurisdiction"].isin(selected_jurisdictions)) &
+    fest_mask
+)
+df_filtered = df[mask].copy()
+
+# Time series (left)
 # Time series (left)
 with left:
     st.subheader("Time Series — Calls by Day")
     ts_df = agg_calls_by_day(df_filtered, date_col="date")
-    if ts_df.empty:
-        st.info("No data for selected filters.")
-    else:
+
+    if not ts_df.empty:
         fig = px.line(ts_df, x="date", y="count", labels={"date": "Date", "count": "Calls"})
-        fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
+
+    # Highlight festival week if selected
+        if festival_choice != "None":
+            fest_start, fest_end = pd.to_datetime(FESTIVALS[festival_choice][0]), pd.to_datetime(FESTIVALS[festival_choice][1])
+            # Add shaded region
+            fig.add_vrect(
+                x0=fest_start, x1=fest_end,
+                fillcolor="red", opacity=0.2,
+                layer="below", line_width=0,
+                annotation_text=f"{festival_choice}", annotation_position="top left"
+            )
         st.plotly_chart(fig, use_container_width=True)
+        # Insights
+        insights = interpret_time_series(ts_df)
+        st.markdown("**Insights:**")
+        for ins in insights:
+            st.markdown(f"- {ins}")
+
+    else:
+        st.info("No data for selected filters.")
 
     st.subheader("Hourly Distribution")
-    hr = agg_calls_by_hour(df_filtered, hour_col="hour")
-    fig2 = px.bar(hr, x="hour", y="count", labels={"hour": "Hour of day", "count": "Calls"})
+    if festival_choice != "None":
+        # Label rows as Festival or Non-Festival
+        df_filtered["period"] = df_filtered["call_ts"].apply(
+            lambda x: "Festival" if (fest_start <= x <= fest_end) else "Non-Festival"
+        )
+
+        hr = df_filtered.groupby(["hour", "period"]).size().reset_index(name="count")
+
+        # Stacked bar chart (festival vs non-festival)
+        fig2 = px.bar(
+            hr, x="hour", y="count", color="period", barmode="stack",
+            labels={"hour": "Hour of Day", "count": "Calls"}
+        )
+
+        # Collapse to per-hour totals for interpretation only
+        hr_totals = hr.groupby("hour")["count"].sum().reset_index()
+        insights = interpret_hourly_distribution(hr_totals)
+
+    else:
+        hr = agg_calls_by_hour(df_filtered, hour_col="hour")
+        fig2 = px.bar(hr, x="hour", y="count", labels={"hour": "Hour of Day", "count": "Calls"})
+        insights = interpret_hourly_distribution(hr)
+
     st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown("**Insights:**")
+    for ins in insights:
+        st.markdown(f"- {ins}")
 
 # Category distribution (right)
 with right:
@@ -98,3 +175,4 @@ with right:
 st.markdown("---")
 st.write("Debug: data source metadata")
 st.json(metadata)
+
