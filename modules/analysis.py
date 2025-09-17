@@ -39,3 +39,42 @@ def compute_kpis(df):
         "with_coords_pct": round(df["has_coords"].mean() * 100.0, 2) if "has_coords" in df.columns else None
     }
     return kpis
+
+def interpret_time_series(ts_df):
+    """Generate textual insights for time series (calls/day)."""
+    insights = []
+    if ts_df.empty:
+        return ["No data available for selected period."]
+    
+    top_days = ts_df.nlargest(3, "count")
+    low_days = ts_df.nsmallest(3, "count")
+
+    insights.append(f"Peak day: {top_days.iloc[0]['date']} with {top_days.iloc[0]['count']} calls.")
+    insights.append(f"Lowest day: {low_days.iloc[0]['date']} with only {low_days.iloc[0]['count']} calls.")
+
+    avg = ts_df['count'].mean()
+    if ts_df['count'].iloc[-1] > avg * 1.5:
+        insights.append("Recent days show a surge in calls above the monthly average.")
+    elif ts_df['count'].iloc[-1] < avg * 0.5:
+        insights.append("Recent days show a significant drop in calls compared to average.")
+
+    return insights
+
+def interpret_hourly_distribution(hr_df):
+    """Generate textual insights for hourly distribution."""
+    insights = []
+    if hr_df.empty:
+        return ["No data available for selected period."]
+
+    peak_hours = hr_df.nlargest(3, "count")
+    low_hours = hr_df.nsmallest(3, "count")
+
+    insights.append(f"Peak hour: {peak_hours.iloc[0]['hour']} with {peak_hours.iloc[0]['count']} calls.")
+    insights.append(f"Quietest hour: {low_hours.iloc[0]['hour']} with only {low_hours.iloc[0]['count']} calls.")
+
+    if peak_hours.iloc[0]['hour'] in range(18, 24):
+        insights.append("Evening hours are consistently busy — likely crime and safety-related.")
+    if peak_hours.iloc[0]['hour'] in range(6, 9):
+        insights.append("Morning hours see high call activity — possibly accidents and medical emergencies.")
+
+    return insights
