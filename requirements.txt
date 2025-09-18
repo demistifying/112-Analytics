@@ -2,6 +2,5 @@ streamlit
 pandas
 plotly
 openpyxl     # to support Excel uploads
-folium
-streamlit-folium
-streamlit_folium
+numpy
+pydeck

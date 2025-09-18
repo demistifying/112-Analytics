@@ -5,7 +5,7 @@ import plotly.express as px
 from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
 import os
-from modules.mapping import plot_points_on_map, plot_heatmap
+from modules.mapping import pydeck_points_map, pydeck_heatmap, pydeck_hexbin_map
 from streamlit_folium import st_folium
 from config import FESTIVALS
 from modules.analysis import (
@@ -79,16 +79,28 @@ left, right = st.columns([2, 1])
 # Mapping section
 st.markdown("## Spatial Mapping")
 
-tab1, tab2 = st.tabs(["Points Map", "Hotspot Heatmap"])
+tab1, tab2, tab3 = st.tabs(["Points Map", "Hotspot Heatmap", "Hexbin Hotspots"])
 
 with tab1:
-    m1 = plot_points_on_map(df_filtered)
-    st_data1 = st_folium(m1, width=700, height=500)
+    deck_points = pydeck_points_map(df_filtered)
+    if deck_points:
+        st.pydeck_chart(deck_points)
+    else:
+        st.info("No valid coordinates to plot.")
 
 with tab2:
-    m2 = plot_heatmap(df_filtered)
-    st_data2 = st_folium(m2, width=700, height=500)
-    st.sidebar.write("Valid coords in filtered data:", df_filtered[['caller_lat','caller_lon']].dropna().shape[0])
+    deck_heat = pydeck_heatmap(df_filtered)
+    if deck_heat:
+        st.pydeck_chart(deck_heat)
+    else:
+        st.info("No valid coordinates to plot heatmap.")
+
+with tab3:
+    deck_hex = pydeck_hexbin_map(df_filtered)
+    if deck_hex:
+        st.pydeck_chart(deck_hex)
+    else:
+        st.info("No valid coordinates to plot hexbin hotspots.")
 
 
 # Sidebar festival filter
