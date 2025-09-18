@@ -5,17 +5,13 @@ import plotly.express as px
 from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
 import os
-<<<<<<< HEAD
 from modules.mapping import plot_points_on_map, plot_heatmap
 from streamlit_folium import st_folium
-=======
 from config import FESTIVALS
 from modules.analysis import (
     agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis,
     interpret_time_series, interpret_hourly_distribution
 )
-
->>>>>>> cfeb6ba2c289f381e05ebd7c9471106855abc33f
 
 st.set_page_config(page_title="Goa Police", layout="wide")
 
@@ -80,7 +76,6 @@ kpi3.metric("% with coordinates", f"{kpis['with_coords_pct']}%")
 st.markdown("---")
 left, right = st.columns([2, 1])
 
-<<<<<<< HEAD
 # Mapping section
 st.markdown("## Spatial Mapping")
 
@@ -96,7 +91,6 @@ with tab2:
     st.sidebar.write("Valid coords in filtered data:", df_filtered[['caller_lat','caller_lon']].dropna().shape[0])
 
 
-=======
 # Sidebar festival filter
 st.sidebar.header("Festival Filter")
 festival_choice = st.sidebar.selectbox("Select festival week", ["None"] + list(FESTIVALS.keys()))
@@ -126,7 +120,6 @@ mask = (
 df_filtered = df[mask].copy()
 
 # Time series (left)
->>>>>>> cfeb6ba2c289f381e05ebd7c9471106855abc33f
 # Time series (left)
 with left:
     st.subheader("Time Series — Calls by Day")
