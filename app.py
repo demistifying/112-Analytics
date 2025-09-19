@@ -16,7 +16,6 @@ from modules.analysis import (
     agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis,
     interpret_time_series, interpret_hourly_distribution
 )
-from modules.mapping import plot_points_on_map, plot_heatmap
 from modules.festivals_ics import fetch_festivals_from_ics
 from modules.festivals_utils import filter_significant_festivals
 from modules.ui_calendar import render_month_calendar
@@ -166,16 +165,7 @@ left, right = st.columns([2, 1])
 # Mapping
 # -------------------------
 st.markdown("## Spatial Mapping")
-tab1, tab2 = st.tabs(["Points Map", "Hotspot Heatmap"])
-with tab1:
-    m1 = plot_points_on_map(df_filtered)
-    st_data1 = st_folium(m1, width=700, height=500)
-with tab2:
-    m2 = plot_heatmap(df_filtered)
-    st_data2 = st_folium(m2, width=700, height=500)
-    st.sidebar.write("Valid coords in filtered data:", df_filtered[['caller_lat', 'caller_lon']].dropna().shape[0])
-
-tab1, tab2, tab3 = st.tabs(["Points Map", "Hotspot Heatmap", "Hexbin Hotspots"])
+tab1, tab2, tab3 = st.tabs(["Points Map", "Hotspot Heatmap", "Hexbin Map"])
 
 with tab1:
     deck_points = pydeck_points_map(df_filtered)
