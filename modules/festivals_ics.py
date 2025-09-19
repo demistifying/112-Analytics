@@ -1,41 +1,71 @@
 # modules/festivals_ics.py
+import os
 import requests
-import pandas as pd
-from icalendar import Calendar
+from ics import Calendar
+from datetime import datetime
+import streamlit as st
 
-# Google public Indian holiday/calendar ICS feed
-ICS_URL = "https://calendar.google.com/calendar/ical/en.indian%23holiday%40group.v.calendar.google.com/public/basic.ics"
+# --- Define URL and local file path ---
+ICS_URL = "https://www.officeholidays.com/ics/india"
+ICS_FILE_PATH = os.path.join("data", "festivals.ics")
+DATA_DIR = "data"
 
-def fetch_festivals_from_ics(url: str = ICS_URL):
+def download_and_save_ics():
     """
-    Fetch events from an ICS feed and return a list of tuples:
-    [(name, pd.Timestamp(start), pd.Timestamp(end)), ...]
-    NOTE: Google ICS typically sets DTEND as exclusive; we convert to inclusive end.
+    Downloads the ICS file from the URL and saves it locally.
+    Returns True on success, False on failure.
     """
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
+    try:
+        # Ensure the 'data' directory exists
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+            
+        response = requests.get(ICS_URL, verify=False) # Added verify=False to bypass SSL issues
+        response.raise_for_status()
+        
+        with open(ICS_FILE_PATH, 'w') as f:
+            f.write(response.text)
+        
+        # The st.info message was removed from here
+        return True
+    except requests.exceptions.RequestException as e:
+        # Errors will still be shown so you can debug if the download fails
+        st.error(f"Error downloading festival calendar: {e}. Please check your internet connection.")
+        return False
 
-    cal = Calendar.from_ical(resp.content)
-    festivals = []
-    for component in cal.walk():
-        if component.name == "VEVENT":
-            name = str(component.get("SUMMARY"))
-            dtstart = component.get("DTSTART").dt
-            dtend = component.get("DTEND").dt
+@st.cache_data(ttl=86400)  # cache the parsed data for 24 hours
+def fetch_festivals_from_ics():
+    """
+    Loads festival data. If a local copy exists, it uses it.
+    If not, it downloads it from the web, saves it, and then uses it.
+    """
+    # Check if the local file exists. If not, download it.
+    if not os.path.exists(ICS_FILE_PATH):
+        # The st.warning message was removed from here
+        if not download_and_save_ics():
+            return [] # Return empty list if download fails
 
-            # Normalize to pandas Timestamp
-            start = pd.to_datetime(dtstart)
-            end = pd.to_datetime(dtend)
+    # Now, proceed with reading from the local file
+    try:
+        with open(ICS_FILE_PATH, 'r') as f:
+            ics_content = f.read()
+        
+        cal = Calendar(ics_content)
+        
+        festivals = []
+        for event in cal.events:
+            if event.begin and event.end:
+                start_dt = event.begin.datetime
+                end_dt = event.end.datetime
 
-            # For all-day events ICS often uses date-only and dtend is exclusive (next day).
-            # Make end inclusive (subtract 1 day) for date-only events and when dtend > start.
-            if hasattr(dtstart, "strftime") and dtstart.__class__.__name__ == "date" and not hasattr(dtstart, "hour"):
-                # date-only event
-                end = end - pd.Timedelta(days=1)
+                # Make datetimes timezone-naive
+                if start_dt.tzinfo:
+                    start_dt = start_dt.replace(tzinfo=None)
+                if end_dt.tzinfo:
+                    end_dt = end_dt.replace(tzinfo=None)
 
-            # If end < start (rare), set end = start
-            if end < start:
-                end = start
-
-            festivals.append((name, start, end))
-    return festivals
+                festivals.append((event.name, start_dt, end_dt))
+        return festivals
+    except Exception as e:
+        st.error(f"Error parsing local festival calendar ({ICS_FILE_PATH}): {e}")
+        return []

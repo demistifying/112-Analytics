@@ -13,7 +13,3 @@ REQUIRED_COLUMNS = [
 DATE_COL = "call_ts"
 CATEGORY_COL = "category"
 JURISDICTION_COL = "jurisdiction"
-
-# festival months (used in synthetic generation and optional feature flags)
-FESTIVAL_MONTHS = [2, 3, 8, 9, 10, 11]
-# Known festivals and their weeks (example dates, update as per real Goa calendar)

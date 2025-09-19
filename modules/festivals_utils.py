@@ -1,90 +1,69 @@
 # modules/festivals_utils.py
-from datetime import timedelta
 import pandas as pd
 
-def filter_significant_festivals(festivals, df, category='crime', threshold_pct=30.0, min_calls=5):
+def filter_significant_festivals(
+    festivals_in_range,
+    df,
+    category='crime',
+    top_n=10  # Parameter to get top N festivals
+):
     """
-    Given a list of festivals [(name, start_ts, end_ts), ...] and the dataframe `df`
-    (must contain 'date' as datetime.date and 'category' column), return a list of
-    significant festival dicts:
-    [
-      {
-        'name': name,
-        'start': start_ts,
-        'end': end_ts,
-        'max_pct': ...,
-        'max_count': ...,
-        'max_day': datetime.date(...)
-      },
-      ...
-    ]
-    Criteria:
-      - For each festival day, compute day_count = number of calls where category == category and date == that day.
-      - Baseline for that weekday = average daily calls for that weekday for given category across dataset.
-      - Percent increase = (day_count - baseline) / baseline * 100
-      - If any day in festival has percent_increase >= threshold_pct and day_count >= min_calls,
-        the festival is considered significant (we record the day with max_pct).
+    Identifies the top N festivals with the highest number of calls for a specific category.
+
+    Args:
+        festivals_in_range (list): List of tuples (name, start_ts, end_ts).
+        df (pd.DataFrame): The full dataframe of calls.
+        category (str): The category to check for spikes (e.g., 'crime').
+        top_n (int): The number of top festivals to return.
+
+    Returns:
+        list: A list of dictionaries, each with details of a top festival,
+              sorted by the highest call count day.
     """
-    if df is None or df.empty:
+    if df.empty or not festivals_in_range:
         return []
 
-    # Ensure 'date' column is datetime.date objects (if not, convert)
-    df = df.copy()
-    if not pd.api.types.is_datetime64_any_dtype(df['date']):
-        df['date'] = pd.to_datetime(df['date'])
-    # work with date-only index
-    df['__date'] = pd.to_datetime(df['date']).dt.date
+    # Ensure 'date' column is datetime
+    df['date'] = pd.to_datetime(df['date'])
 
-    # Series: counts per date for the category
-    df_cat = df[df['category'].astype(str).str.lower() == category.lower()]
+    # Filter for the specific category
+    df_cat = df[df['category'].str.lower() == category.lower()]
+
     if df_cat.empty:
         return []
 
-    counts_by_date = df_cat.groupby('__date').size()  # index = date objects
+    festival_crime_stats = []
 
-    results = []
-    for name, start_ts, end_ts in festivals:
-        start_date = pd.to_datetime(start_ts).date()
-        end_date = pd.to_datetime(end_ts).date()
+    for name, fs, fe in festivals_in_range:
+        festival_days = pd.date_range(fs, fe, freq='D')
+        df_fest = df_cat[df_cat['date'].isin(festival_days)]
 
-        cur = start_date
-        max_pct = -999.0
-        max_count = 0
-        max_day = None
+        if df_fest.empty:
+            continue
 
-        while cur <= end_date:
-            day_count = int(counts_by_date.get(cur, 0))
-            # compute baseline: average for same weekday across all dates in counts_by_date
-            weekday = cur.weekday()  # Monday=0
-            same_wd_counts = counts_by_date[[d for d in counts_by_date.index if d.weekday() == weekday]] \
-                             if len(counts_by_date) > 0 else pd.Series(dtype=float)
+        daily_counts = df_fest.groupby('date').size()
+        max_day_count = daily_counts.max()
+        max_day = daily_counts.idxmax()
 
-            if not same_wd_counts.empty:
-                baseline = same_wd_counts.mean()
-            else:
-                baseline = counts_by_date.mean() if not counts_by_date.empty else 0
+        # We need a baseline to calculate percentage, even if not used for filtering
+        # For simplicity, we can set a dummy baseline or calculate it as before
+        baseline_avg = df_cat[~df_cat['date'].isin(festival_days)].groupby('date').size().mean()
+        if pd.isna(baseline_avg) or baseline_avg == 0:
+            increase_pct = 100.0  # Assign a high value if no baseline
+        else:
+            increase_pct = ((max_day_count - baseline_avg) / baseline_avg) * 100
 
-            # avoid div by zero
-            baseline_adj = baseline if baseline > 0 else 1.0
+        festival_crime_stats.append({
+            'name': name,
+            'max_day': max_day.strftime('%Y-%m-%d'),
+            'max_count': int(max_day_count),
+            'baseline_avg': baseline_avg,
+            'max_pct': increase_pct
+        })
 
-            pct = (day_count - baseline_adj) / baseline_adj * 100.0
+    # --- NEW LOGIC: Sort by the max count and take the top N ---
+    # Sort the list of festivals by 'max_count' in descending order
+    sorted_festivals = sorted(festival_crime_stats, key=lambda x: x['max_count'], reverse=True)
 
-            if day_count >= min_calls and pct > max_pct:
-                max_pct = pct
-                max_count = day_count
-                max_day = cur
-
-            cur = cur + timedelta(days=1)
-
-        # if any day exceeded threshold, mark festival significant
-        if max_day is not None and max_pct >= threshold_pct:
-            results.append({
-                'name': name,
-                'start': start_ts,
-                'end': end_ts,
-                'max_pct': max_pct,
-                'max_count': max_count,
-                'max_day': pd.to_datetime(max_day)
-            })
-
-    return results
+    # Return the top N results
+    return sorted_festivals[:top_n]
