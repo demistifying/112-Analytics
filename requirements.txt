@@ -1,11 +1,7 @@
-streamlit
 pandas
-plotly
-openpyxl     # to support Excel uploads
-folium
-streamlit-folium
-streamlit_folium
-icalendar
-requests
-numpy
+streamlit
+plotly.express
 pydeck
+streamlit-folium
+requests
+ics

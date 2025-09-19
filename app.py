@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from modules.data_loader import load_data, preprocess
 from modules.analysis import agg_calls_by_day, agg_calls_by_hour, category_distribution, compute_kpis
@@ -118,27 +119,36 @@ for name, fs, fe in all_festivals:
     if (start_sel <= fe_ts) and (end_sel >= fs_ts):
         festivals_in_range_all.append((name, fs_ts, fe_ts))
 
-# Determine significant festivals based on crime spikes (category='crime' default)
-significant_festals_info = filter_significant_festivals(festivals_in_range_all, df, category='crime',
-                                                        threshold_pct=30.0, min_calls=5)
-# create a set of festival names that are significant for quick lookup
+# --- Get the top 10 festivals by crime calls ---
+significant_festals_info = filter_significant_festivals(
+    festivals_in_range_all, df, category='crime', top_n=10
+)
+# Create a set of significant festival names for quick lookup
 significant_names = {f['name'] for f in significant_festals_info}
 
 # -------------------------
 # Tag df_filtered rows with festival_name (for stacking & other use)
 # -------------------------
-def tag_festival_for_row(ts):
-    for name, fs, fe in festivals_in_range_all:
+def tag_festival_for_row(ts, festivals_list):
+    for name, fs, fe in festivals_list:
         if fs <= ts <= fe:
             return name
     return "Non-Festival"
 
-# Tagging uses all festivals that fall in the selected date range (not only significant)
-if festivals_in_range_all:
-    # ensure call_ts is datetime
-    df_filtered["festival_name"] = df_filtered["call_ts"].apply(tag_festival_for_row)
-else:
-    df_filtered["festival_name"] = "Non-Festival"
+# Tag all festivals first for general awareness
+df_filtered["festival_name"] = df_filtered["call_ts"].apply(tag_festival_for_row, festivals_list=festivals_in_range_all)
+
+# --- MODIFIED: Create a specific column for the hourly chart ---
+# This column will only contain names of the top 10 festivals. Everything else is "Non-Festival".
+def tag_significant_festivals(row):
+    festival_name = row["festival_name"]
+    if festival_name in significant_names:
+        return festival_name
+    else:
+        return "Non-Festival"
+
+df_filtered["significant_festival_name"] = df_filtered.apply(tag_significant_festivals, axis=1)
+
 
 # Show overlap warning only if the selected range is small (<= 31 days)
 range_days = (end_sel - start_sel).days
@@ -148,7 +158,6 @@ if festivals_in_range_all and range_days <= 31:
         overlapping_texts.append(f"**{name}** ({fs.date()} → {fe.date()})")
     st.warning("Selected date range overlaps festival(s): " + "; ".join(overlapping_texts))
 
-
 # -------------------------
 # KPIs
 # -------------------------
@@ -156,7 +165,7 @@ kpi1, kpi2, kpi3 = st.columns(3)
 kpis = compute_kpis(df_filtered)
 kpi1.metric("Total calls (filtered)", kpis["total_calls"])
 kpi2.metric("Avg calls / day", kpis["avg_per_day"])
-kpi3.metric("% with coordinates", f"{kpis['with_coords_pct']}%")
+kpi3.metric("Peak Call Hour", kpis["peak_hour"])
 
 st.markdown("---")
 left, right = st.columns([2, 1])
@@ -189,44 +198,51 @@ with tab3:
         st.info("No valid coordinates to plot hexbin hotspots.")
 
 # -------------------------
-# Time series (highlight all festivals, annotate only significant)
+# Time series (highlight significant festivals with hover-over regions)
 # -------------------------
 with left:
     st.subheader("Time Series — Calls by Day")
     ts_df = agg_calls_by_day(df_filtered, date_col="date")
 
     if not ts_df.empty:
+        # Convert date column to datetime for proper alignment
+        ts_df['date'] = pd.to_datetime(ts_df['date'])
+
+        # Create the base line chart
         fig = px.line(ts_df, x="date", y="count", labels={"date": "Date", "count": "Calls"})
+        fig.update_traces(hovertemplate='Date: %{x|%Y-%m-%d}<br>Calls: %{y}')
 
-        # shade all festival intervals (light)
-        for name, fs, fe in festivals_in_range_all:
-            fig.add_vrect(
-                x0=fs, x1=fe,
-                fillcolor="orange", opacity=0.12,
-                layer="below", line_width=0
-            )
-
-        # annotate only significant festivals (give exact day and percent)
         if significant_festals_info:
-            # determine y position for annotations
-            y_top = ts_df['count'].max() if not ts_df['count'].empty else 1
-            y_annot = y_top * 1.05
+            y_max = ts_df['count'].max()
+            festival_dates_lookup = {name: (fs, fe) for name, fs, fe in festivals_in_range_all}
 
             for info in significant_festals_info:
                 fname = info['name']
-                fday = pd.to_datetime(info['max_day'])
-                pct = info['max_pct']
-                cnt = info['max_count']
-                ann_text = f"{fname}: +{pct:.0f}% ({cnt} calls)"
-                fig.add_annotation(
-                    x=fday, y=y_annot,
-                    text=ann_text,
-                    showarrow=False,
-                    bgcolor="black",
-                    bordercolor="orange",
-                    borderwidth=1,
-                    font=dict(size=10)
-                )
+                if fname in festival_dates_lookup:
+                    fs, fe = festival_dates_lookup[fname]
+
+                    # 1. Add the visible orange shading
+                    fig.add_vrect(
+                        x0=fs, x1=fe,
+                        fillcolor="orange", opacity=0.15,
+                        layer="below", line_width=0
+                    )
+
+                    # 2. Add an invisible bar with the correct hover template
+                    hover_text = f"<b>{info['name']}</b><br>Peak Calls on Max Day: {info['max_count']}<br>Increase vs. Avg: +{info['max_pct']:.0f}%"
+                    
+                    fig.add_trace(go.Bar(
+                        x=[fs + (fe - fs) / 2],
+                        y=[y_max * 1.5],
+                        width=(fe - fs).total_seconds() * 1000,
+                        name=fname,
+                        customdata=[hover_text],  # --- CHANGE 1: Use customdata ---
+                        hovertemplate='%{customdata}<extra></extra>', # --- CHANGE 2: Reference customdata ---
+                        marker_opacity=0,
+                        showlegend=False
+                    ))
+        
+        fig.update_layout(yaxis_range=[0, ts_df['count'].max() * 1.1])
 
         st.plotly_chart(fig, use_container_width=True)
 
@@ -241,15 +257,24 @@ with left:
     # Hourly distribution (stacked by festival_name if present)
     # -------------------------
     st.subheader("Hourly Distribution")
-    if festivals_in_range_all:
-        hr = df_filtered.groupby(["hour", "festival_name"]).size().reset_index(name="count")
-        fig2 = px.bar(hr, x="hour", y="count", color="festival_name", barmode="stack",
-                      labels={"hour": "Hour of Day", "count": "Calls"})
+    # Use the 'significant_festival_name' column for the chart
+    if significant_names:
+        hr = df_filtered.groupby(["hour", "significant_festival_name"]).size().reset_index(name="count")
+        
+        # Define a specific color for the 'Non-Festival' category
+        color_map = {"Non-Festival": "lightblue"}
+
+        fig2 = px.bar(hr, x="hour", y="count", color="significant_festival_name", barmode="stack",
+                    color_discrete_map=color_map,  # This line sets the color
+                    labels={"hour": "Hour of Day", "count": "Calls", "significant_festival_name": "Festival"})
+        
         hr_totals = hr.groupby("hour")["count"].sum().reset_index()
         insights = interpret_hourly_distribution(hr_totals)
     else:
         hr = agg_calls_by_hour(df_filtered, hour_col="hour")
+        # For the non-festival case, we can ensure the default bar is also light blue
         fig2 = px.bar(hr, x="hour", y="count", labels={"hour": "Hour of Day", "count": "Calls"})
+        fig2.update_traces(marker_color='skyblue') # This line sets the color
         insights = interpret_hourly_distribution(hr)
 
     st.plotly_chart(fig2, use_container_width=True)

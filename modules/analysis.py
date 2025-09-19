@@ -2,79 +2,86 @@
 import pandas as pd
 
 def agg_calls_by_day(df, date_col="date"):
-    """Return DataFrame with counts per day."""
-    series = df.groupby(date_col).size().reset_index(name="count")
-    series = series.sort_values(date_col)
-    return series
+    """Aggregates call counts by day."""
+    if df.empty or date_col not in df.columns:
+        return pd.DataFrame(columns=[date_col, 'count'])
+    return df.groupby(date_col).size().reset_index(name='count')
 
 def agg_calls_by_hour(df, hour_col="hour"):
-    """Return DataFrame with counts per hour (0-23)."""
-    series = df.groupby(hour_col).size().reset_index(name="count")
-    # Ensure hours 0-23 exist
-    all_hours = pd.DataFrame({hour_col: list(range(24))})
-    series = all_hours.merge(series, on=hour_col, how="left").fillna(0)
-    series["count"] = series["count"].astype(int)
-    return series
+    """Aggregates call counts by hour."""
+    if df.empty or hour_col not in df.columns:
+        return pd.DataFrame(columns=[hour_col, 'count'])
+    return df.groupby(hour_col).size().reset_index(name='count')
 
 def category_distribution(df, category_col="category"):
-    """Return DataFrame with counts and percentage by category."""
-    counts = df[category_col].value_counts(dropna=False).reset_index()
-    counts.columns = [category_col, "count"]
-    counts["pct"] = counts["count"] / counts["count"].sum() * 100.0
-    return counts
+    """Calculates distribution of calls by category."""
+    if df.empty or category_col not in df.columns:
+        return pd.DataFrame(columns=[category_col, 'count'])
+    return df.groupby(category_col).size().reset_index(name='count')
 
 def compute_kpis(df):
-    """Return basic KPIs as dict."""
-    total_calls = len(df)
-    avg_per_day = None
-    try:
-        days = (df["date"].max() - df["date"].min()).days + 1
-        avg_per_day = total_calls / max(days, 1)
-    except Exception:
-        avg_per_day = None
+    """Computes key performance indicators from the dataframe."""
+    if df.empty:
+        return {
+            "total_calls": 0,
+            "avg_per_day": 0,
+            "peak_hour": "N/A"
+        }
 
-    kpis = {
-        "total_calls": int(total_calls),
-        "avg_per_day": round(avg_per_day, 2) if avg_per_day is not None else None,
-        "with_coords_pct": round(df["has_coords"].mean() * 100.0, 2) if "has_coords" in df.columns else None
+    total_calls = len(df)
+    
+    # Avg calls per day
+    if "date" in df.columns:
+        days_in_range = df["date"].nunique()
+        avg_per_day = round(total_calls / days_in_range) if days_in_range > 0 else 0
+    else:
+        avg_per_day = 0
+
+    # Calculate Peak Call Hour
+    if "hour" in df.columns and not df["hour"].empty:
+        peak_hour_val = df["hour"].mode()[0]
+        peak_hour = f"{int(peak_hour_val):02d}:00 - {int(peak_hour_val)+1:02d}:00"
+    else:
+        peak_hour = "N/A"
+
+    return {
+        "total_calls": total_calls,
+        "avg_per_day": avg_per_day,
+        "peak_hour": peak_hour
     }
-    return kpis
 
 def interpret_time_series(ts_df):
-    """Generate textual insights for time series (calls/day)."""
-    insights = []
-    if ts_df.empty:
-        return ["No data available for selected period."]
+    """Generates simple text insights from time series data."""
+    if ts_df.empty or len(ts_df) < 2:
+        return ["Not enough data for insights."]
     
-    top_days = ts_df.nlargest(3, "count")
-    low_days = ts_df.nsmallest(3, "count")
+    insights = []
+    peak_day = ts_df.loc[ts_df['count'].idxmax()]
+    trough_day = ts_df.loc[ts_df['count'].idxmin()]
 
-    insights.append(f"Peak day: {top_days.iloc[0]['date']} with {top_days.iloc[0]['count']} calls.")
-    insights.append(f"Lowest day: {low_days.iloc[0]['date']} with only {low_days.iloc[0]['count']} calls.")
-
-    avg = ts_df['count'].mean()
-    if ts_df['count'].iloc[-1] > avg * 1.5:
-        insights.append("Recent days show a surge in calls above the monthly average.")
-    elif ts_df['count'].iloc[-1] < avg * 0.5:
-        insights.append("Recent days show a significant drop in calls compared to average.")
-
+    insights.append(f"Highest traffic on **{peak_day['date'].strftime('%Y-%m-%d')}** with {peak_day['count']} calls.")
+    insights.append(f"Lowest traffic on **{trough_day['date'].strftime('%Y-%m-%d')}** with {trough_day['count']} calls.")
+    
     return insights
 
 def interpret_hourly_distribution(hr_df):
-    """Generate textual insights for hourly distribution."""
-    insights = []
+    """Generates insights from hourly call distribution."""
     if hr_df.empty:
-        return ["No data available for selected period."]
-
-    peak_hours = hr_df.nlargest(3, "count")
-    low_hours = hr_df.nsmallest(3, "count")
-
-    insights.append(f"Peak hour: {peak_hours.iloc[0]['hour']} with {peak_hours.iloc[0]['count']} calls.")
-    insights.append(f"Quietest hour: {low_hours.iloc[0]['hour']} with only {low_hours.iloc[0]['count']} calls.")
-
-    if peak_hours.iloc[0]['hour'] in range(18, 24):
-        insights.append("Evening hours are consistently busy — likely crime and safety-related.")
-    if peak_hours.iloc[0]['hour'] in range(6, 9):
-        insights.append("Morning hours see high call activity — possibly accidents and medical emergencies.")
-
+        return ["No hourly data available."]
+        
+    peak_hour = hr_df.loc[hr_df['count'].idxmax()]
+    
+    # Define time slots
+    morning_hours = hr_df[(hr_df['hour'] >= 6) & (hr_df['hour'] < 12)]['count'].sum()
+    afternoon_hours = hr_df[(hr_df['hour'] >= 12) & (hr_df['hour'] < 18)]['count'].sum()
+    evening_hours = hr_df[(hr_df['hour'] >= 18) & (hr_df['hour'] < 24)]['count'].sum()
+    night_hours = hr_df[(hr_df['hour'] >= 0) & (hr_df['hour'] < 6)]['count'].sum()
+    
+    slots = {"Morning (6-12)": morning_hours, "Afternoon (12-18)": afternoon_hours, 
+             "Evening (18-24)": evening_hours, "Night (0-6)": night_hours}
+    
+    busiest_slot = max(slots, key=slots.get)
+    
+    insights = [f"Peak activity is around **{int(peak_hour['hour']):02d}:00**, with an average of {peak_hour['count']} calls.",
+                f"The busiest time slot is **{busiest_slot}**."]
     return insights
