@@ -31,6 +31,10 @@ def initialize_session_state():
         st.session_state.user_id = None
     if 'user_data' not in st.session_state:
         st.session_state.user_data = None
+    if 'show_profile_menu' not in st.session_state:
+        st.session_state.show_profile_menu = False
+    if 'profile_action' not in st.session_state:
+        st.session_state.profile_action = None
 
 def validate_username(username):
     """Validate username format"""
@@ -159,49 +163,63 @@ def show_user_info():
     if st.session_state.user_data:
         user_data = st.session_state.user_data
 
-        # Profile menu in top right corner
-        col1, col2 = st.columns([9.8, 0.2])
-        with col2:
-            if st.button("👤", key="profile_btn", help="Profile Menu", use_container_width=True):
-                st.session_state.show_profile_menu = True
+        # Create a sidebar for profile management instead of popover
+        with st.sidebar:
+            st.markdown("---")
+            st.subheader("👤 Profile Menu")
+            
+            # Profile action buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("👤", help="View Profile", key="view_profile_btn"):
+                    st.session_state.profile_action = "profile"
+            with col2:
+                if st.button("🔑", help="Change Password", key="change_pass_btn"):
+                    st.session_state.profile_action = "password"
+            with col3:
+                if st.button("🚪", help="Logout", key="logout_btn"):
+                    st.session_state.profile_action = "logout"
 
-            if st.session_state.get("show_profile_menu", False):
-                with st.popover(""):
-                    selected = st.radio(
-                        "",
-                        ["👤 Profile", "🔑 Change Password", "🚪 Logout"],
-                        index=0,
-                        label_visibility="collapsed",
-                        key="profile_options"
-                    )
+        # Handle profile actions in main area
+        if st.session_state.profile_action == "profile":
+            with st.expander("👤 Profile Information", expanded=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text_input("First Name", value=user_data.get('first_name', ''), disabled=True, key="profile_fname")
+                    st.text_input("Username", value=user_data.get('username', ''), disabled=True, key="profile_username")
+                    st.text_input("Police Station", value=user_data.get('police_station', ''), disabled=True, key="profile_station")
+                with col2:
+                    st.text_input("Last Name", value=user_data.get('last_name', ''), disabled=True, key="profile_lname")
+                    st.text_input("Rank", value=user_data.get('rank', ''), disabled=True, key="profile_rank")
+                
+                if st.button("Close Profile", key="close_profile"):
+                    st.session_state.profile_action = None
+                    st.rerun()
+        
+        elif st.session_state.profile_action == "password":
+            with st.expander("🔑 Change Password", expanded=True):
+                with st.form("change_password_form"):
+                    st.subheader("Change Password")
+                    current_password = st.text_input("Current Password", type="password")
+                    new_password = st.text_input("New Password", type="password")
+                    confirm_password = st.text_input("Confirm New Password", type="password")
 
-                    if selected == "👤 Profile":
-                        st.subheader("Profile Information")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.text_input("First Name", value=user_data['first_name'], disabled=True)
-                            st.text_input("Username", value=user_data['username'], disabled=True)
-                        with col2:
-                            st.text_input("Last Name", value=user_data['last_name'], disabled=True)
-                            st.text_input("Rank", value=user_data['rank'], disabled=True)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        submit_change = st.form_submit_button("Update Password")
+                    with col2:
+                        cancel_change = st.form_submit_button("Cancel")
 
-                    elif selected == "🔑 Change Password":
-                        with st.form("change_password_form"):
-                            st.subheader("Change Password")
-                            current_password = st.text_input("Current Password", type="password")
-                            new_password = st.text_input("New Password", type="password")
-                            confirm_password = st.text_input("Confirm New Password", type="password")
-
-                            if st.form_submit_button("Update Password"):
-                                if new_password != confirm_password:
-                                    st.error("New passwords do not match!")
-                                    return
-
-                                is_valid, msg = validate_password(new_password)
-                                if not is_valid:
-                                    st.error(msg)
-                                    return
-
+                    if submit_change:
+                        if new_password != confirm_password:
+                            st.error("New passwords do not match!")
+                        elif len(new_password) < 6:
+                            st.error("Password must be at least 6 characters long!")
+                        else:
+                            is_valid, msg = validate_password(new_password)
+                            if not is_valid:
+                                st.error(msg)
+                            else:
                                 try:
                                     # Update password in Firebase Auth
                                     auth.update_user(
@@ -209,48 +227,30 @@ def show_user_info():
                                         password=new_password
                                     )
                                     st.success("Password updated successfully!")
+                                    st.session_state.profile_action = None
+                                    st.rerun()
                                 except Exception as e:
                                     st.error(f"Error updating password: {str(e)}")
 
-                    elif selected == "🚪 Logout":
-                        # New logout confirmation dialog
-                        st.markdown("---")
-                        st.warning("Are you sure you want to logout?")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("Yes, Logout", key="confirm_logout"):
-                                # Clear all session state
-                                for key in list(st.session_state.keys()):
-                                    del st.session_state[key]
-                                st.success("Logged out successfully!")
-                                st.experimental_rerun()
-                        with col2:
-                            if st.button("Cancel", key="cancel_logout"):
-                                st.session_state.show_profile_menu = False
-                                st.rerun()
-
-                st.session_state.show_profile_menu = False
-
-def logout_box():
-    """Show logout box and redirect to login page"""
-    if st.session_state.get("show_logout_confirm", False):
-        with st.form("logout_confirmation"):
-            st.warning("Are you sure you want to logout?")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("Yes, Logout"):
-                    # Clear all session state
-                    for key in list(st.session_state.keys()):
-                        del st.session_state[key]
-                    st.success("Logged out successfully!")
-                    st.experimental_rerun()
-            with col2:
-                if st.form_submit_button("Cancel"):
-                    st.session_state.show_logout_confirm = False
-                    st.session_state.show_profile_menu = False
-                    st.rerun()
-    else:
-        st.session_state.show_logout_confirm = True
+                    if cancel_change:
+                        st.session_state.profile_action = None
+                        st.rerun()
+        
+        elif st.session_state.profile_action == "logout":
+            with st.expander("🚪 Logout Confirmation", expanded=True):
+                st.warning("⚠️ Are you sure you want to logout?")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Yes, Logout", type="primary", key="confirm_logout_btn"):
+                        # Clear all session state
+                        for key in list(st.session_state.keys()):
+                            del st.session_state[key]
+                        st.success("Logged out successfully!")
+                        st.rerun()
+                with col2:
+                    if st.button("Cancel", key="cancel_logout_btn"):
+                        st.session_state.profile_action = None
+                        st.rerun()
 
 def notification_center():
     """Notification center for top officers to send alerts and sub officers to view them."""
@@ -291,7 +291,7 @@ def notification_center():
         st.subheader("Alerts from Top Officers")
         try:
             # Simple query without ordering first
-            alerts_ref = db.collection("alerts").where("active", "==", True).order_by("timestamp", direction="DESCENDING").limit(10)
+            alerts_ref = db.collection("alerts").where("active", "==", True).limit(10)
             alerts = alerts_ref.stream()
             
             # Process results in memory
@@ -302,28 +302,35 @@ def notification_center():
                 if 'timestamp' in alert_data:  # Check if timestamp exists
                     alert_list.append(alert_data)
             
-            # Sort in memory
-            alert_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+            # Sort in memory by timestamp if available
+            if alert_list:
+                try:
+                    alert_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+                except:
+                    # If sorting fails, just show the alerts as they are
+                    pass
             
-            # Display only last 10 alerts
+            # Display alerts
             if alert_list:
                 for alert_data in alert_list[:10]:
                     with st.container():
                         st.markdown(f"""
-        <strong style='font-size:1.1em'>{alert_data['title']}</strong><br>
-        {alert_data['message']}<br>
-        👤 Caller Name: {alert_data.get('caller_name', 'N/A')}<br>
-        📍 Caller Location: {alert_data.get('caller_location', 'N/A')}<br>
-        🚓 Deployment Location: {alert_data.get('location', 'N/A')}<br>
-        👮 Sent by: {alert_data['from_rank']} ({alert_data['from_officer']})
-        """, unsafe_allow_html=True)
+        **{alert_data.get('title', 'N/A')}**  
+        {alert_data.get('message', 'N/A')}  
+        👤 **Caller Name:** {alert_data.get('caller_name', 'N/A')}  
+        📍 **Caller Location:** {alert_data.get('caller_location', 'N/A')}  
+        🚓 **Deployment Location:** {alert_data.get('location', 'N/A')}  
+        👮 **Sent by:** {alert_data.get('from_rank', 'N/A')} ({alert_data.get('from_officer', 'N/A')})
+        """)
+                        st.markdown("---")
             else:
-                st.write("No active alerts.")
+                st.info("No active alerts at the moment.")
                 
         except Exception as e:
             st.error(f"Error loading alerts: {str(e)}")
-            st.write("Please try refreshing the page.")
+            st.info("Please try refreshing the page.")
 
+# Police station lists
 NORTH_DISTRICT_POLICE_STATIONS = [
     "Panaji Police Station",
     "Old Goa Police Station",
@@ -342,7 +349,6 @@ NORTH_DISTRICT_POLICE_STATIONS = [
 ]
 
 SOUTH_DISTRICT_POLICE_STATIONS = [
-    # Add your South District stations here
     "Margao Police Station",
     "Colva Police Station",
     "Curchorem Police Station",
@@ -355,7 +361,6 @@ SOUTH_DISTRICT_POLICE_STATIONS = [
 ]
 
 OTHER_POLICE_STATIONS = [
-    # Add any other stations here
     "Traffic Police Station",
     "Cyber Crime Police Station",
     "Women Police Station"
